@@ -13,7 +13,6 @@ export default function Chat() {
 						</AccordionTrigger>
 						<AccordionContent>
 							<div className='flex h-80 flex-col text-black'>
-								messages
 								<ChatInput className='px-4' />
 							</div>
 						</AccordionContent>

@@ -1,9 +1,11 @@
 'use client'
 
 import { cn } from '@/lib/utils'
+import { nanoid } from 'nanoid'
 import { useMutation } from '@tanstack/react-query'
-import { ChangeEvent, HTMLAttributes, useState } from 'react'
+import { HTMLAttributes, useState } from 'react'
 import TextareaAutosize from 'react-textarea-autosize'
+import { Message } from '@/lib/validators/message'
 
 interface ChatInputProps extends HTMLAttributes<HTMLDivElement> {}
 
@@ -11,25 +13,32 @@ export default function ChatInput({ className, ...props }: ChatInputProps) {
 	const [input, setInput] = useState<string>('')
 
 	const { mutate: sendMessage, isLoading } = useMutation({
-		mutationFn: async () => {
-			const res = await fetch('/api/message', {
+		mutationFn: async (message: Message) => {
+			const response = await fetch('/api/message', {
 				method: 'POST',
 				headers: {
 					'Content-Type': 'application/json',
 				},
-				body: JSON.stringify({ messages: 'hello' }),
+				body: JSON.stringify({ messages: [message] }),
 			})
 
-			return res.body
+			return response.body
 		},
-		onSuccess: () => {
-			console.log('success')
+		onSuccess: async stream => {
+			if (!stream) throw new Error('Stream is undefined')
+
+			const reader = stream.getReader()
+			const decoder = new TextDecoder()
+			let done = false
+
+			while (!done) {
+				const { value, done: doneReading } = await reader.read()
+				done = doneReading
+				const chunkValue = decoder.decode(value)
+				console.log(chunkValue)
+			}
 		},
 	})
-
-	const handleChange = (e: ChangeEvent<HTMLTextAreaElement>) => {
-		setInput(e.target.value)
-	}
 
 	return (
 		<div {...props} className={cn('border-t border-zinc-300', className)}>
@@ -39,7 +48,19 @@ export default function ChatInput({ className, ...props }: ChatInputProps) {
 					maxRows={4}
 					autoFocus
 					value={input}
-					onChange={handleChange}
+					onKeyDown={e => {
+						if (e.key === 'Enter' && !e.shiftKey) {
+							e.preventDefault()
+							const message: Message = {
+								id: nanoid(),
+								isUserMessage: true,
+								text: input,
+							}
+
+							sendMessage(message)
+						}
+					}}
+					onChange={e => setInput(e.target.value)}
 					placeholder='Write a message...'
 					className='peer block w-full resize-none border-0 bg-zinc-100 py-1.5 pr-14 text-sm text-gray-900 focus:ring-0 disabled:opacity-50 sm:leading-6'
 				/>
