@@ -3,14 +3,20 @@
 import { cn } from '@/lib/utils'
 import { nanoid } from 'nanoid'
 import { useMutation } from '@tanstack/react-query'
-import { HTMLAttributes, useState } from 'react'
+import { HTMLAttributes, useContext, useRef, useState } from 'react'
 import TextareaAutosize from 'react-textarea-autosize'
 import { Message } from '@/lib/validators/message'
+import { MessagesContext } from '@/context/messages'
+import { CornerDownLeft, Loader2 } from 'lucide-react'
+import toast from 'react-hot-toast'
 
 interface ChatInputProps extends HTMLAttributes<HTMLDivElement> {}
 
 export default function ChatInput({ className, ...props }: ChatInputProps) {
 	const [input, setInput] = useState<string>('')
+	const { messages, addMessage, removeMessage, updateMessage, setIsMessageUpdating } = useContext(MessagesContext)
+
+	const textareaRef = useRef<HTMLTextAreaElement | null>(null)
 
 	const { mutate: sendMessage, isLoading } = useMutation({
 		mutationFn: async (message: Message) => {
@@ -22,10 +28,27 @@ export default function ChatInput({ className, ...props }: ChatInputProps) {
 				body: JSON.stringify({ messages: [message] }),
 			})
 
+			if (!response.ok) {
+				throw new Error('Something went wrong')
+			}
+
 			return response.body
+		},
+		onMutate(message) {
+			addMessage(message)
 		},
 		onSuccess: async stream => {
 			if (!stream) throw new Error('Stream is undefined')
+
+			const responseMessage: Message = {
+				id: nanoid(),
+				isUserMessage: false,
+				text: '',
+			}
+
+			addMessage(responseMessage)
+
+			setIsMessageUpdating(true)
 
 			const reader = stream.getReader()
 			const decoder = new TextDecoder()
@@ -35,8 +58,21 @@ export default function ChatInput({ className, ...props }: ChatInputProps) {
 				const { value, done: doneReading } = await reader.read()
 				done = doneReading
 				const chunkValue = decoder.decode(value)
-				console.log(chunkValue)
+				updateMessage(responseMessage.id, prev => prev + chunkValue)
 			}
+
+			// clean up
+			setIsMessageUpdating(false)
+			setInput('')
+
+			setTimeout(() => {
+				textareaRef.current?.focus()
+			}, 10)
+		},
+		onError(_, message) {
+			toast.error('Something went wrong, please try again')
+			removeMessage(message.id)
+			textareaRef.current?.focus()
 		},
 	})
 
@@ -44,9 +80,11 @@ export default function ChatInput({ className, ...props }: ChatInputProps) {
 		<div {...props} className={cn('border-t border-zinc-300', className)}>
 			<div className='relative mt-4 flex-1 overflow-hidden rounded-lg border-none outline-none'>
 				<TextareaAutosize
+					ref={textareaRef}
 					rows={2}
 					maxRows={4}
 					autoFocus
+					disabled={isLoading}
 					value={input}
 					onKeyDown={e => {
 						if (e.key === 'Enter' && !e.shiftKey) {
@@ -63,6 +101,15 @@ export default function ChatInput({ className, ...props }: ChatInputProps) {
 					onChange={e => setInput(e.target.value)}
 					placeholder='Write a message...'
 					className='peer block w-full resize-none border-0 bg-zinc-100 py-1.5 pr-14 text-sm text-gray-900 focus:ring-0 disabled:opacity-50 sm:leading-6'
+				/>
+				<div className='absolute inset-y-0 right-0 flex py-1.5 pr-1.5'>
+					<kbd className='inline-flex items-center rounded border bg-white border-gray-200 px-1 font-sans text-sm tex-gray-400'>
+						{isLoading ? <Loader2 className='w-3 h-3 animate-spin' /> : <CornerDownLeft className='w-3 h-3' />}
+					</kbd>
+				</div>
+				<div
+					aria-hidden='true'
+					className='absolute inset-x-0 bottom-0 border-top border-gray-300 peer-focus:border-t-2 peer-focus:border-indigo-600'
 				/>
 			</div>
 		</div>
